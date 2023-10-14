@@ -15,6 +15,12 @@ input_number:
     max: 30
     step: 0.1
     icon: mdi:thermometer
+  fake_humidity_sensor1:
+    name: Humidity 1
+    min: 0
+    max: 100
+    step: 1
+    icon: mdi:water-percent
   fake_temperature_sensor2:
     name: Temperature 2
     min: 8
@@ -27,6 +33,12 @@ input_number:
     max: 30
     step: 0.1
     icon: mdi:thermometer
+  fake_humidity_sensor3:
+    name: Humidity 3
+    min: 0
+    max: 100
+    step: 1
+    icon: mdi:water-percent
   fake_temperature_sensor4:
     name: Temperature 4
     min: 8
@@ -75,6 +87,7 @@ climate:
     name: "AT1"
     heater: input_boolean.fake_heater_switch1
     target_sensor: input_number.fake_temperature_sensor1
+    humidity_sensor: input_number.fake_humidity_sensor1
     min_temp: 17
     max_temp: 23
     ac_mode: false
@@ -97,7 +110,7 @@ climate:
     name: "AT2"
     heater: input_boolean.fake_heater_switch2
     target_sensor: input_number.fake_temperature_sensor2
-    window_sensor: binary_sensor.fake_window_sensor2
+    window_sensor: input_boolean.fake_window_sensor2
     window_delay: 3
     min_temp: 17
     max_temp: 23
@@ -121,6 +134,7 @@ climate:
     name: "AT3"
     heater: input_boolean.fake_heater_switch3
     target_sensor: input_number.fake_temperature_sensor3
+    humidity_sensor: input_number.fake_humidity_sensor3
     motion_sensor: input_boolean.fake_motion_sensor
     motion_mode: comfort
     no_motion_mode: eco

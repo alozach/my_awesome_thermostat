@@ -64,6 +64,7 @@ DEFAULT_NAME = "My Awesome Thermostat"
 
 CONF_HEATER = "heater"
 CONF_SENSOR = "target_sensor"
+CONF_HUMIDITY_SENSOR = "humidity_sensor"
 CONF_WINDOWS_SENSOR = "window_sensor"
 CONF_WINDOWS_DELAY = "window_delay"
 CONF_MOTION_SENSOR = "motion_sensor"
@@ -82,8 +83,10 @@ CONF_INITIAL_HVAC_MODE = "initial_hvac_mode"
 CONF_PRECISION = "precision"
 CONF_TARGET_TEMP_STEP = "target_temp_step"
 
-
 SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
+
+ATTR_STATE_WINDOW_OPEN = "window_open"
+ATTR_STATE_HUMIDIY = "humidity"
 
 CONF_PRESETS = {
     p: f"{p}_temp"
@@ -101,6 +104,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_HEATER): cv.entity_id,
         vol.Required(CONF_SENSOR): cv.entity_id,
+        vol.Optional(CONF_HUMIDITY_SENSOR): cv.entity_id,
         vol.Optional(CONF_WINDOWS_SENSOR): cv.entity_id,
         vol.Optional(CONF_WINDOWS_DELAY): cv.positive_time_period,
         vol.Optional(CONF_MOTION_SENSOR): cv.entity_id,
@@ -138,6 +142,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     name = config.get(CONF_NAME)
     heater_entity_id = config.get(CONF_HEATER)
     temperature_entity_id = config.get(CONF_SENSOR)
+    humidity_entity_id = config.get(CONF_HUMIDITY_SENSOR)
     windows_entity_id = config.get(CONF_WINDOWS_SENSOR)
     windows_delay = config.get(CONF_WINDOWS_DELAY)
     min_temp = config.get(CONF_MIN_TEMP)
@@ -168,6 +173,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 name,
                 heater_entity_id,
                 temperature_entity_id,
+                humidity_entity_id,
                 windows_entity_id,
                 windows_delay,
                 motion_entity_id,
@@ -201,6 +207,7 @@ class MyAwesomeThermostat(ClimateEntity, RestoreEntity):
         name,
         heater_entity_id,
         temperature_entity_id,
+        humidity_entity_id,
         windows_entity_id,
         windows_delay,
         motion_entity_id,
@@ -226,8 +233,10 @@ class MyAwesomeThermostat(ClimateEntity, RestoreEntity):
         self._name = name
         self.heater_entity_id = heater_entity_id
         self.temperature_entity_id = temperature_entity_id
-        self.windows_entity_id = windows_entity_id
+        self.humidity_entity_id = humidity_entity_id
+        self.window_entity_id = windows_entity_id
         self.windows_delay = windows_delay or 0
+        self.window_open = None
         self.motion_entity_id = motion_entity_id
         self.motion_mode = motion_mode
         self.no_motion_mode = no_motion_mode
@@ -259,6 +268,7 @@ class MyAwesomeThermostat(ClimateEntity, RestoreEntity):
             self._hvac_list = [HVAC_MODE_HEAT, HVAC_MODE_OFF]
         self._active = False
         self._cur_temp = None
+        self._cur_hum = 0
         self._temp_lock = asyncio.Lock()
         self._min_temp = min_temp
         self._max_temp = max_temp
@@ -285,10 +295,16 @@ class MyAwesomeThermostat(ClimateEntity, RestoreEntity):
                 self.hass, [self.temperature_entity_id], self._async_temperature_changed
             )
         )
-        if self.windows_entity_id:
+        if self.humidity_entity_id:
             self.async_on_remove(
                 async_track_state_change_event(
-                    self.hass, [self.windows_entity_id], self._async_windows_changed
+                    self.hass, [self.humidity_entity_id], self._async_humidity_changed
+                )
+            )
+        if self.window_entity_id:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, [self.window_entity_id], self._async_windows_changed
                 )
             )
         if self.support_motion_control:
@@ -369,6 +385,13 @@ class MyAwesomeThermostat(ClimateEntity, RestoreEntity):
         if not self._hvac_mode:
             self._hvac_mode = HVAC_MODE_OFF
 
+
+        self.window_open = False
+        if self.window_entity_id is not None:
+          window = self.hass.states.get(self.window_entity_id)
+          if window and window.state in ("on", "open", "true"):
+              self.window_open = True
+
     @property
     def should_poll(self):
         """Return the polling state."""
@@ -434,6 +457,22 @@ class MyAwesomeThermostat(ClimateEntity, RestoreEntity):
         return self._target_temp
 
     @property
+    def extra_state_attributes(self):
+        """Return the device specific state attributes.
+
+        Returns
+        -------
+        dict
+                Attribute dictionary for the extra device specific state attributes.
+        """
+        dev_specific = {
+            ATTR_STATE_WINDOW_OPEN: self.window_open,
+            ATTR_STATE_HUMIDIY: self._cur_hum
+        }
+
+        return dev_specific
+
+    @property
     def hvac_modes(self):
         """List of available operation modes."""
         return self._hvac_list
@@ -494,6 +533,15 @@ class MyAwesomeThermostat(ClimateEntity, RestoreEntity):
         await self._async_control_heating()
         self.async_write_ha_state()
 
+    async def _async_humidity_changed(self, event):
+        """Handle humidity changes."""
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+
+        self._async_update_hum(new_state)
+        self.async_write_ha_state()
+
     async def _async_windows_changed(self, event):
         """Handle window changes."""
         if self._cancel_window_listener:
@@ -508,6 +556,8 @@ class MyAwesomeThermostat(ClimateEntity, RestoreEntity):
         async def try_window_delay_condition(_):
             if not self._saved_hvac_mode:
                 self._saved_hvac_mode = self._hvac_mode
+
+            self.window_open = new_state.state == STATE_ON
 
             if new_state.state == STATE_OFF:
                 await self.async_set_hvac_mode(self._saved_hvac_mode)
@@ -582,6 +632,17 @@ class MyAwesomeThermostat(ClimateEntity, RestoreEntity):
             if math.isnan(cur_temp) or math.isinf(cur_temp):
                 raise ValueError(f"Sensor has illegal state {state.state}")
             self._cur_temp = cur_temp
+        except ValueError as ex:
+            _LOGGER.error("Unable to update from sensor: %s", ex)
+
+    @callback
+    def _async_update_hum(self, state):
+        """Update thermostat with latest state from humidity sensor."""
+        try:
+            cur_hum = float(state.state)
+            if math.isnan(cur_hum) or math.isinf(cur_hum):
+                raise ValueError(f"Sensor has illegal state {state.state}")
+            self._cur_hum = cur_hum
         except ValueError as ex:
             _LOGGER.error("Unable to update from sensor: %s", ex)
 
