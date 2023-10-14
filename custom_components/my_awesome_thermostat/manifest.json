@@ -1,0 +1,15 @@
+{
+  "domain": "my_awesome_thermostat",
+  "name": "My Awesome Thermostat",
+  "documentation": "https://github.com/alozach/my_awesome_thermostat",
+  "dependencies": [
+    "sensor",
+    "switch"
+  ],
+  "codeowners": [
+    "@alozach"
+  ],
+  "version": "1.0.0",
+  "issue_tracker": "https://github.com/alozach/my_awesome_thermostat",
+  "iot_class": "local_polling"
+}
