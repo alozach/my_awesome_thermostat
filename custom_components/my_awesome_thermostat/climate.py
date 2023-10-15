@@ -553,16 +553,15 @@ class MyAwesomeThermostat(ClimateEntity, RestoreEntity):
         if new_state is None or old_state is None or new_state.state == old_state.state:
             return
 
-        async def try_window_delay_condition(_):
-            if not self._saved_hvac_mode:
-                self._saved_hvac_mode = self._hvac_mode
+        if not self._saved_hvac_mode or new_state.state == STATE_ON:
+            self._saved_hvac_mode = self._hvac_mode
 
+        async def try_window_delay_condition(_):
             self.window_open = new_state.state == STATE_ON
 
             if new_state.state == STATE_OFF:
                 await self.async_set_hvac_mode(self._saved_hvac_mode)
             elif new_state.state == STATE_ON:
-                self._saved_hvac_mode = self._hvac_mode
                 await self.async_set_hvac_mode(HVAC_MODE_OFF)
             else:
                 return
